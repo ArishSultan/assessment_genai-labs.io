@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from src.llm_client import OpenRouterLLMClient, build_default_llm_client
-from src.types import (
+from src.my_types import (
     SQLValidationOutput,
     SQLExecutionOutput,
     PipelineOutput,

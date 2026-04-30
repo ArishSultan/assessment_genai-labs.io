@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any
 
-from src.types import SQLGenerationOutput, AnswerGenerationOutput
+from src.my_types import SQLGenerationOutput, AnswerGenerationOutput
 
 DEFAULT_MODEL = "openai/gpt-5-nano"
 
