@@ -3,12 +3,11 @@ from __future__ import annotations
 import re
 import json
 
-from typing import Any, Self, List
-from pydantic import BaseModel, Field, model_validator
+from typing import Any, List
 from openrouter.components import ChatMessages, ChatSystemMessage, ChatUserMessage
 
 SQL_SYSTEM_PROMPT = (
-    "You write SQLite SELECT queries against a single fixed table. "
+    "You write SQLite queries against a single fixed table. "
     "Use ONLY the columns listed in the schema. Never invent columns or tables. "
     "If the question cannot be answered with the schema, set sql to null and "
     "provide a brief reason. The user's question is wrapped in <question> "
@@ -51,14 +50,11 @@ def trim_rows_for_prompt(
         max_str_len: int = 120,
         max_avg_col_len: int = 80,
 ) -> list[dict[str, Any]]:
-    """Cap row count, trim long strings, drop bulky free-text columns."""
     if not rows:
         return []
 
     sample = rows[:row_preview]
 
-    # Accumulate string length sums and counts in a single pass [total_len, count]
-    # This avoids generating intermediate lists of lengths for every column.
     stats: dict[str, list[int]] = {}
     for row in sample:
         for k, v in row.items():
@@ -69,13 +65,11 @@ def trim_rows_for_prompt(
                 else:
                     stats[k] = [len(v), 1]
 
-    # Determine which columns to drop based on average length
     drop_cols = {
         k for k, (total, count) in stats.items()
         if (total / count) > max_avg_col_len
     }
 
-    # Build the output list with inlined trimming logic for speed
     return [
         {
             k: (v[:max_str_len - 1] + "…" if isinstance(v, str) and len(v) > max_str_len else v)
@@ -102,7 +96,6 @@ def build_answer_messages(
         max_avg_col_len=max_avg_col_len,
     )
 
-    # Calculate complex strings outside the f-string for better readability
     sanitized_q = _sanitize_question(question)
     rows_json = json.dumps(trimmed, ensure_ascii=True, default=str)
 

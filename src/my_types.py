@@ -1,8 +1,6 @@
-"""Type definitions for SQL Agent pipeline input/output structures."""
-
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any, Self, Optional
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field, model_validator
@@ -42,7 +40,7 @@ class SQLValidationOutput:
 @dataclass
 class SQLExecutionOutput:
     """Output from the SQL execution stage."""
-    rows: list[dict[str, Any]]
+    rows: list[dict[Any, Any]]
     row_count: int
     timing_ms: float
     error: str | None = None
@@ -88,16 +86,14 @@ class PipelineOutput:
 
 
 class SQLResponse(BaseModel):
-    sql: str | None = Field(
-        default=None,
+    sql: str = Field(
         description=(
-            "A single SQLite SELECT statement using only the columns from "
-            "the provided schema. Null when the question cannot be answered."
+            "A SQLite statement using only the columns from the provided schema. "
+            "set it to `INVALID` if query is not possible."
         ),
     )
-    reason: str | None = Field(
-        default=None,
-        description="Required when sql is null. Brief explanation of why.",
+    reason: str = Field(
+        description="Brief explanation of why the question cannot be answered.",
     )
 
     @model_validator(mode="after")
@@ -106,13 +102,11 @@ class SQLResponse(BaseModel):
         reason_clean = self.reason.strip() if self.reason else ""
 
         if not sql_clean and not reason_clean:
-            raise ValueError("Response must contain either 'sql' or 'reason'.")
+            raise ValueError("Set the sql to `INVALID` if the answer is not possible but do not provide both sql and reason.")
 
         if sql_clean:
             self.sql = sql_clean
-            self.reason = None
         else:
             self.reason = reason_clean
-            self.sql = None
 
         return self

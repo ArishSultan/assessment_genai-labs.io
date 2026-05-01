@@ -8,18 +8,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DescriptionLevel = Literal["minimal", "standard", "full"]
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_DB_PATH = BASE_DIR / "data" / "gaming_mental_health.sqlite"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         extra="ignore",
-        env_file=".env",
+        env_file=BASE_DIR / ".env",
         case_sensitive=False,
         env_file_encoding="utf-8",
     )
 
+
+    openrouter_api_key: str = Field(alias="OPENROUTER_API_KEY")
+
+    reasoning_effort: int = Field(default='minimal', alias="REASONING_EFFORT")
+    reasoning_summary: int = Field(default='concise', alias="REASONING_SUMMARY")
+    gen_sql_max_tokens: int = Field(default=512, alias="GEN_SQL_MAX_SQL_TOKENS")
+
     model: str = Field(default="openai/gpt-5-nano", alias="OPENROUTER_MODEL")
-    table: str = Field(default="gaming", alias="DB_TABLE")
-    db_path: Path = Field(default=Path("data/gaming.db"), alias="DB_PATH")
+    table: str = Field(alias="DB_TABLE")
+    db_path: Path = Field(default=DEFAULT_DB_PATH, alias="DB_PATH")
     max_sql_tokens: int = Field(default=512, alias="MAX_SQL_TOKENS")
     max_answer_tokens: int = Field(default=512, alias="MAX_ANSWER_TOKENS")
     answer_row_preview: int = Field(default=30, alias="ANSWER_ROW_PREVIEW")
@@ -33,6 +43,10 @@ class Settings(BaseSettings):
     schema_descriptions_path: Path | None = Field(
         default=None, alias="SCHEMA_DESCRIPTIONS_PATH"
     )
+
+    @property
+    def schema_path(self):
+        return BASE_DIR / 'data' / f'{self.table}_schema.yaml'
 
     @field_validator("schema_description_level", mode="before")
     @classmethod

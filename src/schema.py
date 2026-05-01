@@ -1,7 +1,8 @@
 import yaml
 
-from typing import Any
+from typing import Any, Iterable, Dict
 from config import SETTINGS
+
 from pathlib import Path
 
 
@@ -23,6 +24,10 @@ class SchemaCache:
         self.table_data = data.get(self.table_name, {})
         if not self.table_data:
             raise ValueError(f"Table '{self.table_name}' not found in the YAML schema.")
+
+    @property
+    def schema(self) -> Dict[str, Iterable[str]]:
+        return {self.table_name: self.columns.keys()}
 
     @property
     def columns(self) -> dict[str, dict[str, Any]]:

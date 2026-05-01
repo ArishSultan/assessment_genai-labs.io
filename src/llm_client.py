@@ -9,11 +9,9 @@ from typing import Any, List, Optional
 from prompts import build_sql_messages, build_answer_messages
 from pydantic import ValidationError
 from openrouter.components import ChatResult, ChatMessages, ResponseFormat, ChatFormatJSONSchemaConfig, \
-    ChatJSONSchemaConfig
+    ChatJSONSchemaConfig, Reasoning
 
 from src.my_types import SQLGenerationOutput, AnswerGenerationOutput, SQLResponse
-
-DEFAULT_MODEL = "openai/gpt-5-nano"
 
 
 class OpenRouterLLMClient:
@@ -26,7 +24,7 @@ class OpenRouterLLMClient:
             from openrouter import OpenRouter
         except ModuleNotFoundError as exc:
             raise RuntimeError("Missing dependency: install 'openrouter'.") from exc
-        self.model = model or os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL)
+        self.model = model or os.getenv("OPENROUTER_MODEL", SETTINGS.model)
         self._client = OpenRouter(api_key=api_key)
         self._stats = self._empty_stats()
 
@@ -53,6 +51,7 @@ class OpenRouterLLMClient:
         res = self._client.chat.send(
             messages=messages,
             model=self.model,
+            reasoning=Reasoning(effort='minimal', summary='concise'),
             temperature=temperature,
             max_tokens=max_tokens,
             response_format=response_format,
@@ -67,6 +66,7 @@ class OpenRouterLLMClient:
         content = getattr(getattr(choices[0], "message", None), "content", None)
         if not isinstance(content, str):
             raise RuntimeError("OpenRouter response content is not text.")
+
         return content.strip()
 
     def generate_sql(self, question: str, schema_cache: SchemaCache) -> SQLGenerationOutput:
@@ -75,7 +75,7 @@ class OpenRouterLLMClient:
 
         try:
             response_text = self._chat(
-                max_tokens=240,
+                max_tokens=SETTINGS.gen_sql_max_tokens,
                 temperature=0.0,
                 messages=build_sql_messages(question, schema_cache.condensed_text()),
                 response_format=ChatFormatJSONSchemaConfig(
@@ -174,7 +174,4 @@ class OpenRouterLLMClient:
 
 
 def build_default_llm_client() -> OpenRouterLLMClient:
-    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY is required.")
-    return OpenRouterLLMClient(api_key=api_key)
+    return OpenRouterLLMClient(api_key=SETTINGS.openrouter_api_key)
