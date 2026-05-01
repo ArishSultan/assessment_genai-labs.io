@@ -19,7 +19,7 @@ log = get_logger(__name__)
 class AnalyticsPipeline:
     def __init__(
             self,
-            db_path = SETTINGS.db_path,
+            db_path=SETTINGS.db_path,
             llm_client: OpenRouterLLMClient | None = None,
     ) -> None:
         setup_observability()
@@ -32,7 +32,7 @@ class AnalyticsPipeline:
         question_hash = hashlib.sha256((question or "").encode("utf-8")).hexdigest()[:8]
         pipeline_log = log.bind(request_id=request_id, question_hash=question_hash)
         pipeline_log.info("pipeline.started")
-        start = time.perf_counter()
+        start_ns = time.perf_counter_ns()
 
         tracer = trace.get_tracer(__name__)
         with tracer.start_as_current_span("pipeline.run") as root:
@@ -56,10 +56,13 @@ class AnalyticsPipeline:
             )
 
             status = self._resolve_status(sql_gen_output, validation_output, execution_output)
-            total_ms = (time.perf_counter() - start) * 1000
+
+            duration_ns = time.perf_counter_ns() - start_ns
+            total_ms = duration_ns / 1_000_000
 
             METRICS.pipeline_requests.labels(status=status).inc()
-            METRICS.stage_duration.labels(stage="total").observe(total_ms / 1000)
+            METRICS.stage_duration.labels(stage="total").observe(duration_ns / 1_000_000_000)
+
             METRICS.record_llm_stats(_merge_llm_stats(sql_gen_output.llm_stats, answer_output.llm_stats))
             METRICS.flush()
 

@@ -144,7 +144,7 @@ def instrument(stage: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
         @functools.wraps(fn)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             log.debug(f"{stage}.started")
-            t0 = time.perf_counter()
+            t0_ns = time.perf_counter_ns()
 
             with _tracer().start_as_current_span(stage) as span:
                 try:
@@ -155,9 +155,12 @@ def instrument(stage: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
                     log.error(f"{stage}.failed", error=str(exc), exc_info=True)
                     raise
 
-            elapsed_ms = (time.perf_counter() - t0) * 1000
-            METRICS.stage_duration.labels(stage=stage).observe(elapsed_ms / 1000)
+            elapsed_ns = time.perf_counter_ns() - t0_ns
+            METRICS.stage_duration.labels(stage=stage).observe(elapsed_ns / 1_000_000_000)
+
+            elapsed_ms = elapsed_ns / 1_000_000
             log.debug(f"{stage}.finished", duration_ms=round(elapsed_ms, 1))
+
             return result
 
         return wrapper

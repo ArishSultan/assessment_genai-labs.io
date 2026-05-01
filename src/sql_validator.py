@@ -39,25 +39,27 @@ class SQLValidator:
         self.max_limit = max_limit
 
     @staticmethod
-    def _ok(start: float, sql: str) -> SQLValidationOutput:
+    def _ok(start_ns: int, sql: str) -> SQLValidationOutput:
+        elapsed_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
         return SQLValidationOutput(
+            error=None,
             is_valid=True,
             validated_sql=sql,
-            error=None,
-            timing_ms=(time.perf_counter() - start) * 1000.0,
+            timing_ms=elapsed_ms,
         )
 
     @staticmethod
-    def _fail(start: float, error: str) -> SQLValidationOutput:
+    def _fail(start_ns: int, error: str) -> SQLValidationOutput:
+        elapsed_ms = (time.perf_counter_ns() - start_ns) / 1_000_000
         return SQLValidationOutput(
+            error=error,
             is_valid=False,
             validated_sql=None,
-            error=error,
-            timing_ms=(time.perf_counter() - start) * 1000.0,
+            timing_ms=elapsed_ms,
         )
 
     def validate(self, sql: str | None) -> SQLValidationOutput:
-        start = time.perf_counter()
+        start = time.perf_counter_ns()
 
         # 1. Empty input.
         if sql is None or not sql.strip():
