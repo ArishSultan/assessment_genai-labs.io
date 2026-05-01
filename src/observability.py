@@ -165,16 +165,25 @@ def instrument(stage: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     return decorator
 
 
+_CONFIGURED = False
+
+
 def setup_observability(
         service_name: str = "analytics-pipeline",
         log_level: str = "INFO",
         log_format: str = "pretty",
         metrics_path: str | Path | None = "metrics.prom",
         otlp_endpoint: str | None = None,
+        force: bool = False,
 ) -> None:
+    global _CONFIGURED
+    if _CONFIGURED and not force:
+        return
+
     _configure_structlog(log_level, log_format)
     _configure_tracing(service_name, otlp_endpoint)
     METRICS._path = Path(metrics_path) if metrics_path else None
+    _CONFIGURED = True
 
     get_logger(__name__).info(
         "observability.ready",

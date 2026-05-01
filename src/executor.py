@@ -3,7 +3,7 @@ import sqlite3
 
 from pathlib import Path
 
-from config import SETTINGS
+from src.config import SETTINGS
 from src.my_types import SQLExecutionOutput
 
 
@@ -21,16 +21,17 @@ class SQLiteExecutor:
             return SQLExecutionOutput(
                 rows=[],
                 row_count=0,
-                timing_ms=(time.perf_counter_ns() - start) * 1_000_000,
+                timing_ms=(time.perf_counter_ns() - start) / 1_000_000,
                 error=None,
             )
 
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            uri = f"file:{self.db_path}?mode=ro"
+            with sqlite3.connect(uri, uri=True) as conn:
                 conn.row_factory = sqlite3.Row
                 cur = conn.cursor()
                 cur.execute(sql)
-                rows = [dict(r) for r in cur.fetchmany(100)]
+                rows = [dict(r) for r in cur.fetchall()]
                 row_count = len(rows)
         except Exception as exc:
             error = str(exc)
@@ -40,6 +41,6 @@ class SQLiteExecutor:
         return SQLExecutionOutput(
             rows=rows,
             row_count=row_count,
-            timing_ms=(time.perf_counter_ns() - start) * 1_000_000,
+            timing_ms=(time.perf_counter_ns() - start) / 1_000_000,
             error=error,
         )

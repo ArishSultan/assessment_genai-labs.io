@@ -1,9 +1,9 @@
 import yaml
 
-from typing import Any, Iterable, Dict
-from config import SETTINGS
-
 from pathlib import Path
+from typing import Any, Iterable, Dict
+
+from src.config import SETTINGS
 
 
 class SchemaCache:

@@ -6,6 +6,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ReasoningEffort = Literal["minimal", "low", "medium", "high"]
+ReasoningSummary = Literal["concise", "detailed"]
 DescriptionLevel = Literal["minimal", "standard", "full"]
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -20,11 +22,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
-
     openrouter_api_key: str = Field(alias="OPENROUTER_API_KEY")
 
-    reasoning_effort: int = Field(default='minimal', alias="REASONING_EFFORT")
-    reasoning_summary: int = Field(default='concise', alias="REASONING_SUMMARY")
+    reasoning_effort: ReasoningEffort = Field(default='minimal', alias="REASONING_EFFORT")
+    reasoning_summary: ReasoningSummary = Field(default='concise', alias="REASONING_SUMMARY")
     gen_sql_max_tokens: int = Field(default=512, alias="GEN_SQL_MAX_SQL_TOKENS")
 
     model: str = Field(default="openai/gpt-5-nano", alias="OPENROUTER_MODEL")
@@ -36,7 +37,6 @@ class Settings(BaseSettings):
     answer_max_str_len: int = Field(default=120, alias="ANSWER_MAX_STR_LEN")
     answer_max_avg_col_len: int = Field(default=80, alias="ANSWER_MAX_AVG_COL_LEN")
 
-    schema_columns_raw: str = Field(default="", alias="SCHEMA_COLUMNS")
     schema_description_level: DescriptionLevel = Field(
         default="full", alias="SCHEMA_DESCRIPTION_LEVEL"
     )
@@ -54,14 +54,6 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v.strip().lower()
         return v
-
-    @property
-    def schema_columns(self) -> list[str] | None:
-        raw = (self.schema_columns_raw or "").strip()
-        if not raw:
-            return None
-        parts = [c.strip() for c in raw.split(",") if c.strip()]
-        return parts or None
 
 
 SETTINGS = Settings()

@@ -3,15 +3,34 @@ from __future__ import annotations
 import os
 import time
 
-from config import SETTINGS
-from schema import SchemaCache
 from typing import Any, List, Optional
-from prompts import build_sql_messages, build_answer_messages
+
+import httpx
 from pydantic import ValidationError
 from openrouter.components import ChatResult, ChatMessages, ResponseFormat, ChatFormatJSONSchemaConfig, \
     ChatJSONSchemaConfig, Reasoning
 
+from src.config import SETTINGS
+from src.schema import SchemaCache
+from src.prompts import build_sql_messages, build_answer_messages
 from src.my_types import SQLGenerationOutput, AnswerGenerationOutput, SQLResponse
+from src.observability import get_logger
+
+_log = get_logger(__name__)
+
+_RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+_RETRY_ATTEMPTS = 3
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _RETRYABLE_HTTP_STATUSES
+    if isinstance(exc, httpx.HTTPError):
+        return False
+    msg = str(exc)
+    return any(str(code) in msg for code in _RETRYABLE_HTTP_STATUSES)
 
 
 class OpenRouterLLMClient:
@@ -48,15 +67,7 @@ class OpenRouterLLMClient:
             max_tokens: int,
             response_format: Optional[ResponseFormat] = None
     ) -> str:
-        res = self._client.chat.send(
-            messages=messages,
-            model=self.model,
-            reasoning=Reasoning(effort='minimal', summary='concise'),
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format=response_format,
-            stream=False,
-        )
+        res = self._send_with_retry(messages, temperature, max_tokens, response_format)
 
         self._update_stats(res)
 
@@ -69,7 +80,45 @@ class OpenRouterLLMClient:
 
         return content.strip()
 
+    def _send_with_retry(
+            self,
+            messages: List[ChatMessages],
+            temperature: float,
+            max_tokens: int,
+            response_format: Optional[ResponseFormat],
+    ) -> ChatResult:
+        last_exc: BaseException | None = None
+        for attempt in range(_RETRY_ATTEMPTS):
+            try:
+                return self._client.chat.send(
+                    messages=messages,
+                    model=self.model,
+                    reasoning=Reasoning(
+                        effort=SETTINGS.reasoning_effort,
+                        summary=SETTINGS.reasoning_summary,
+                    ),
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format=response_format,
+                    stream=False,
+                )
+            except Exception as exc:
+                last_exc = exc
+                if attempt == _RETRY_ATTEMPTS - 1 or not _is_retryable(exc):
+                    raise
+                sleep_s = 2 ** attempt
+                _log.warning(
+                    "llm.chat.retry",
+                    attempt=attempt + 1,
+                    error=str(exc),
+                    sleep_seconds=sleep_s,
+                )
+                time.sleep(sleep_s)
+        assert last_exc is not None
+        raise last_exc
+
     def generate_sql(self, question: str, schema_cache: SchemaCache) -> SQLGenerationOutput:
+        self._stats = self._empty_stats()
         start_ns = time.perf_counter_ns()
         sql, error = None, None
 
@@ -113,11 +162,13 @@ class OpenRouterLLMClient:
             sql: str | None,
             rows: list[dict[str, Any]],
     ) -> AnswerGenerationOutput:
+        self._stats = self._empty_stats()
+
         if not sql:
             return AnswerGenerationOutput(
                 error=None,
                 timing_ms=0.0,
-                llm_stats=self._empty_stats(),
+                llm_stats=self._pop_stats(),
                 answer="I cannot answer this with the available table and schema. "
                        "Please rephrase using known survey fields.",
             )
@@ -125,13 +176,12 @@ class OpenRouterLLMClient:
             return AnswerGenerationOutput(
                 answer="Query executed, but no rows were returned.",
                 timing_ms=0.0,
-                llm_stats=self._empty_stats(),
+                llm_stats=self._pop_stats(),
                 error=None,
             )
 
-        start = time.perf_counter()
+        start = time.perf_counter_ns()
         error: str | None = None
-        stats = self._empty_stats()
 
         try:
             answer = self._chat(
@@ -150,11 +200,10 @@ class OpenRouterLLMClient:
             error = str(exc)
             answer = f"Error generating answer: {error}"
 
-        timing_ms = (time.perf_counter() - start) * 1000.0
         return AnswerGenerationOutput(
             answer=answer,
-            timing_ms=timing_ms,
-            llm_stats=stats,
+            timing_ms=(time.perf_counter_ns() - start) / 1_000_000,
+            llm_stats=self._pop_stats(),
             error=error,
         )
 

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import time
 
-from config import SETTINGS
-from schema import SchemaCache
-from executor import SQLiteExecutor
-from src.my_types import PipelineOutput
 from opentelemetry import trace
-from observability import METRICS, get_logger, setup_observability
-from sql_validator import SQLValidator
+
+from src.config import SETTINGS
+from src.schema import SchemaCache
+from src.executor import SQLiteExecutor
+from src.my_types import PipelineOutput
+from src.observability import METRICS, get_logger, setup_observability
+from src.sql_validator import SQLValidator
 from src.llm_client import OpenRouterLLMClient, build_default_llm_client
 
 log = get_logger(__name__)
@@ -20,22 +22,34 @@ class AnalyticsPipeline:
             db_path = SETTINGS.db_path,
             llm_client: OpenRouterLLMClient | None = None,
     ) -> None:
+        setup_observability()
         self.llm = llm_client or build_default_llm_client()
         self.executor = SQLiteExecutor(db_path)
         self.schema_cache = SchemaCache(SETTINGS.schema_path, SETTINGS.table)
         self.validator = SQLValidator(self.schema_cache.schema)
 
     def run(self, question: str, request_id: str | None = None) -> PipelineOutput:
-        pipeline_log = log.bind(request_id=request_id, question=question)
+        question_hash = hashlib.sha256((question or "").encode("utf-8")).hexdigest()[:8]
+        pipeline_log = log.bind(request_id=request_id, question_hash=question_hash)
         pipeline_log.info("pipeline.started")
         start = time.perf_counter()
 
-        with trace.get_tracer(__name__).start_as_current_span("pipeline.run") as root:
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span("pipeline.run") as root:
             root.set_attribute("request_id", request_id or "")
-            root.set_attribute("question", question)
+            root.set_attribute("question_hash", question_hash)
 
             sql_gen_output = self.llm.generate_sql(question, self.schema_cache)
-            validation_output = self.validator.validate(sql_gen_output.sql)
+
+            with tracer.start_as_current_span("pipeline.validate_sql") as vspan:
+                validation_output = self.validator.validate(sql_gen_output.sql)
+                vspan.set_attribute("is_valid", validation_output.is_valid)
+                if not validation_output.is_valid and validation_output.error:
+                    vspan.set_attribute("error", validation_output.error)
+            METRICS.stage_duration.labels(stage="validation").observe(
+                validation_output.timing_ms / 1000
+            )
+
             execution_output = self.executor.run(validation_output.validated_sql)
             answer_output = self.llm.generate_answer(
                 question, validation_output.validated_sql, execution_output.rows
