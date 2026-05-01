@@ -215,4 +215,5 @@ __marimo__/
 skills-lock.json
 
 # Generated files
+metrics.prom
 data/gaming_mental_health_schema.yaml
