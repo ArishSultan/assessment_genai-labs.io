@@ -213,3 +213,6 @@ __marimo__/
 # Skills
 .agents/
 skills-lock.json
+
+# Generated files
+data/gaming_mental_health_schema.yaml

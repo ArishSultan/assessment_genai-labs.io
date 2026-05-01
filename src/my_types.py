@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any, Self
 from dataclasses import dataclass, field
-from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
 
 
 @dataclass
@@ -83,3 +85,34 @@ class PipelineOutput:
     # Aggregates
     timings: dict[str, float] = field(default_factory=dict)
     total_llm_stats: dict[str, Any] = field(default_factory=dict)
+
+
+class SQLResponse(BaseModel):
+    sql: str | None = Field(
+        default=None,
+        description=(
+            "A single SQLite SELECT statement using only the columns from "
+            "the provided schema. Null when the question cannot be answered."
+        ),
+    )
+    reason: str | None = Field(
+        default=None,
+        description="Required when sql is null. Brief explanation of why.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_response_content(self) -> Self:
+        sql_clean = self.sql.strip() if self.sql else ""
+        reason_clean = self.reason.strip() if self.reason else ""
+
+        if not sql_clean and not reason_clean:
+            raise ValueError("Response must contain either 'sql' or 'reason'.")
+
+        if sql_clean:
+            self.sql = sql_clean
+            self.reason = None
+        else:
+            self.reason = reason_clean
+            self.sql = None
+
+        return self

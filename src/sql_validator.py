@@ -1,40 +1,11 @@
-"""AST-based SQL validator for the analytics pipeline.
-
-Scope: this is one layer of defense for an LLM -> SQLite analytics pipeline.
-The connection-level guards (read-only URI mode, query timeout) are the
-structural guarantees; this validator catches the things that should fail
-fast with a clear error message before we even try to execute.
-
-Sequential checks, cheap-to-expensive:
-  1. Empty input.
-  2. Parse with sqlglot.
-  3. Single statement (rejects `;`-stacked payloads).
-  4. Top-level node is SELECT or UNION.
-  5. No DDL/DML nodes anywhere in the tree.
-  6. Every referenced table is in the schema.
-  7. Every referenced column exists in the table it's qualified with
-     (or in some referenced table if unqualified).
-  8. LIMIT enforced/clamped via AST manipulation.
-
-Aliases in the SELECT list are accepted in ORDER BY / HAVING because
-SQLite resolves them at execution. Subqueries, joins, unions, recursive
-CTEs, and window functions are all allowed -- they are legitimate
-analytical patterns and the connection layer handles slow-query risk.
-"""
-
-from __future__ import annotations
-
 import time
-from typing import Iterable, Mapping
-
 import sqlglot
+
+from typing import Iterable, Mapping
 from sqlglot import expressions as exp
 
 from src.my_types import SQLValidationOutput
 
-# Mutation, schema-change, and session-level statements. Anything matching
-# these anywhere in the tree is a hard reject -- this is the security
-# boundary the validator actually enforces.
 _FORBIDDEN_NODE_TYPES: tuple[type, ...] = (
     exp.Insert,
     exp.Update,
@@ -44,29 +15,13 @@ _FORBIDDEN_NODE_TYPES: tuple[type, ...] = (
     exp.Create,
     exp.Pragma,
     exp.TruncateTable,
-    exp.Command,  # sqlglot's catch-all for unmodeled statements
-    exp.Set,  # SET / SET SESSION
-    exp.Transaction,  # BEGIN / COMMIT / ROLLBACK
+    exp.Command,
+    exp.Set,
+    exp.Transaction,
 )
 
 
 class SQLValidator:
-    """Validate untrusted SELECT statements against a fixed schema.
-
-    Parameters
-    ----------
-    schema:
-        Mapping of ``table_name -> [column_names]``. Names normalized to
-        lowercase internally.
-    dialect:
-        sqlglot dialect string. Defaults to ``"sqlite"``.
-    enforce_limit:
-        If True, queries without a top-level LIMIT (or with a LIMIT
-        greater than ``max_limit``) are rewritten to use ``max_limit``.
-    max_limit:
-        Maximum allowed row count when ``enforce_limit`` is True.
-    """
-
     def __init__(
             self,
             schema: Mapping[str, Iterable[str]],
@@ -82,8 +37,6 @@ class SQLValidator:
         self.dialect = dialect
         self.enforce_limit = enforce_limit
         self.max_limit = max_limit
-
-    # ------------------------------------------------------------------ utils
 
     @staticmethod
     def _ok(start: float, sql: str) -> SQLValidationOutput:
@@ -102,8 +55,6 @@ class SQLValidator:
             error=error,
             timing_ms=(time.perf_counter() - start) * 1000.0,
         )
-
-    # ------------------------------------------------------------------- main
 
     def validate(self, sql: str | None) -> SQLValidationOutput:
         start = time.perf_counter()
